@@ -1,3 +1,5 @@
+EXTRA_CFLAGS += -O0
+
 obj-$(CONFIG_OPTEE) += optee.o
 optee-objs += core.o
 ifdef CONFIG_ARM

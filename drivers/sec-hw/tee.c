@@ -117,6 +117,11 @@ static long tee_ioctl_shm_alloc(struct tee_filp *teefilp,
 		ret = -EFAULT;
 		goto err;
 	}
+	/*
+	 * When user space closes the file descriptor the shared memory
+	 * should be freed
+	 */
+	tee_shm_put(shm);
 	return 0;
 err:
 	if (data.fd >= 0)

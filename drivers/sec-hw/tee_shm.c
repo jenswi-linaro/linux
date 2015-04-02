@@ -123,6 +123,7 @@ struct tee_shm *tee_shm_alloc(struct tee_device *teedev,
 			ret = ERR_CAST(shm->dmabuf);
 			goto err;
 		}
+		get_dma_buf(shm->dmabuf);
 
 		mutex = &teeshm_list_mutex;
 		list_shm = &teeshm_list;
@@ -188,8 +189,6 @@ int tee_shm_fd(struct tee_shm *shm)
 		return -EINVAL;
 
 	fd = dma_buf_fd(shm->dmabuf, O_CLOEXEC);
-	if (fd >= 0)
-		get_dma_buf(shm->dmabuf);
 	return fd;
 }
 EXPORT_SYMBOL_GPL(tee_shm_fd);
@@ -391,8 +390,10 @@ struct tee_shm *tee_shm_get_from_fd(int fd)
 	if (IS_ERR(dmabuf))
 		return ERR_CAST(dmabuf);
 
-	if (!is_shm_dma_buf(dmabuf))
+	if (!is_shm_dma_buf(dmabuf)) {
+		dma_buf_put(dmabuf);
 		return ERR_PTR(-EINVAL);
+	}
 	return dmabuf->priv;
 }
 EXPORT_SYMBOL_GPL(tee_shm_get_from_fd);

@@ -96,6 +96,11 @@ struct tee_shm *tee_shm_alloc(struct tee_device *teedev,
 	if (!shm)
 		return ERR_PTR(-ENOMEM);
 
+	if (!try_module_get(teedev->desc->owner)) {
+		ret = ERR_PTR(-EINVAL);
+		goto err;
+	}
+
 	shm->flags = flags;
 
 	if (flags & TEE_SHM_DMA_BUF) {
@@ -191,6 +196,8 @@ static void tee_shm_release(struct tee_shm *shm)
 
 	poolm->ops->free(poolm, shm);
 	kfree(shm);
+
+	module_put(teedev->desc->owner);
 }
 
 void tee_shm_free_by_tee_context(struct tee_context *ctx)

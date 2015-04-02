@@ -26,6 +26,8 @@ static int tee_open(struct inode *inode, struct file *filp)
 	struct tee_context *ctx;
 
 	teedev = container_of(filp->private_data, struct tee_device, miscdev);
+	if (!try_module_get(teedev->desc->owner))
+		return -EINVAL;
 	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
 	if (!ctx)
 		return -ENOMEM;
@@ -41,11 +43,13 @@ static int tee_open(struct inode *inode, struct file *filp)
 static int tee_release(struct inode *inode, struct file *filp)
 {
 	struct tee_context *ctx = filp->private_data;
+	struct tee_device *teedev = ctx->teedev;
 
 	/* Free all shm:s related to this ctx */
 	tee_shm_free_by_tee_context(ctx);
 
 	ctx->teedev->desc->ops->release(ctx);
+	module_put(teedev->desc->owner);
 	return 0;
 }
 

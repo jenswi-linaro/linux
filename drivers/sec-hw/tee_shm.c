@@ -12,13 +12,16 @@
  *
  */
 #include <linux/device.h>
+#include <linux/fdtable.h>
+#include <linux/sched.h>
 #include <linux/dma-buf.h>
 #include <linux/slab.h>
+#include <linux/module.h>
 #include <linux/sec-hw/tee_drv.h>
 #include "tee_private.h"
 
-static DEFINE_MUTEX(teeshm_list_mutex);
-static LIST_HEAD(teeshm_list);
+/* Mutex for all shm objects and lists */
+static DEFINE_MUTEX(teeshm_mutex);
 static LIST_HEAD(teeshm_pending_free_list);
 
 static void tee_shm_release(struct tee_shm *shm);
@@ -74,10 +77,10 @@ static struct dma_buf_ops tee_shm_dma_buf_ops = {
 struct tee_shm *tee_shm_alloc(struct tee_device *teedev,
 			struct tee_filp *teefilp, size_t size, u32 flags)
 {
+	struct tee_shm_pool_mgr *poolm = NULL;
 	struct tee_shm *shm;
 	void *ret;
-	struct mutex *mutex;
-	struct list_head *list_shm;
+	int rc;
 
 	if (!(flags & TEE_SHM_MAPPED)) {
 		dev_err(teedev->dev, "only mapped allocations supported\n");
@@ -96,27 +99,30 @@ struct tee_shm *tee_shm_alloc(struct tee_device *teedev,
 	shm->flags = flags;
 
 	if (flags & TEE_SHM_DMA_BUF) {
-		int order = get_order(size);
-
-		/* Global shm's must have a teefilp attached */
+		/* dma_buf shm:s must have a teefilp attached */
 		if (!teefilp) {
 			ret = ERR_PTR(-EINVAL);
 			goto err;
 		}
-
 		shm->teefilp = teefilp;
-		shm->size = (1 << order) << PAGE_SHIFT;
-		/* Request zeroed pages to not leak information */
-		shm->kaddr = (void *)__get_free_pages(GFP_KERNEL|__GFP_ZERO,
-						      order);
-		if (!shm->kaddr) {
-			dev_err(teedev->dev,
-				"failed to get order %d pages for shared memory\n",
-				order);
-			ret = ERR_PTR(-ENOMEM);
+		poolm = &teedev->pool->dma_buf_mgr;
+	} else {
+		/* Driver private shm:s must not have a teefilp attached */
+		if (teefilp) {
+			ret = ERR_PTR(-EINVAL);
 			goto err;
 		}
+		shm->teefilp = &teedev->teefilp_private;
+		poolm = &teedev->pool->private_mgr;
+	}
 
+	rc = poolm->ops->alloc(poolm, shm, size);
+	if (rc) {
+		ret = ERR_PTR(rc);
+		goto err;
+	}
+
+	if (flags & TEE_SHM_DMA_BUF) {
 		shm->dmabuf = dma_buf_export(shm, &tee_shm_dma_buf_ops,
 					     shm->size, O_RDWR, NULL);
 		if (IS_ERR(shm->dmabuf)) {
@@ -125,56 +131,25 @@ struct tee_shm *tee_shm_alloc(struct tee_device *teedev,
 		}
 		get_dma_buf(shm->dmabuf);
 
-		mutex = &teeshm_list_mutex;
-		list_shm = &teeshm_list;
-	} else {
-		/* Driver private shm's must not have a teefilp attached */
-		if (teefilp) {
-			ret = ERR_PTR(-EINVAL);
-			goto err;
-		}
-		shm->size = size;
-		shm->kaddr = kzalloc(size, GFP_KERNEL);
-		if (!shm->kaddr) {
-			dev_err(teedev->dev,
-				"failed to allocate %zu bytes of shared memory\n",
-				size);
-			ret = ERR_PTR(-ENOMEM);
-			goto err;
-		}
-
-		mutex = &teedev->mutex;
-		list_shm = &teedev->list_shm;
-	}
-
-	shm->teedev = teedev;
-	shm->paddr = virt_to_phys(shm->kaddr);
-
-	if (flags & TEE_SHM_DMA_BUF) {
 		/*
 		 * Only call share on global shm:s, as the driver private
 		 * shm:s always originates from the driver itself.
 		 */
-		int rc = teedev->desc->ops->shm_share(shm);
-
+		rc = teedev->desc->ops->shm_share(shm);
 		if (rc) {
 			ret = ERR_PTR(rc);
 			goto err;
 		}
 	}
 
-	mutex_lock(mutex);
-	list_add_tail(&shm->list_node, list_shm);
-	mutex_unlock(mutex);
+	mutex_lock(&teeshm_mutex);
+	list_add_tail(&shm->list_node, &teedev->list_shm);
+	mutex_unlock(&teeshm_mutex);
 
 	return shm;
 err:
-	if (shm->kaddr) {
-		if (shm->flags & TEE_SHM_DMA_BUF)
-			free_pages((unsigned long)shm->kaddr, get_order(size));
-		else
-			kfree(shm->kaddr);
-	}
+	if (poolm && shm->kaddr)
+		poolm->ops->free(poolm, shm);
 	kfree(shm);
 	return ret;
 }
@@ -193,30 +168,34 @@ int tee_shm_fd(struct tee_shm *shm)
 }
 EXPORT_SYMBOL_GPL(tee_shm_fd);
 
+int tee_shm_put_fd(int fd)
+{
+	return __close_fd(current->files, fd);
+}
+EXPORT_SYMBOL_GPL(tee_shm_put_fd);
+
+
 static void tee_shm_release(struct tee_shm *shm)
 {
-	struct tee_device *teedev = shm->teedev;
+	struct tee_device *teedev = shm->teefilp->teedev;
+	struct tee_shm_pool_mgr *poolm;
 
-	if (shm->flags & TEE_SHM_DMA_BUF) {
-		/* Only unshare global shm:s */
-		shm->teedev->desc->ops->shm_unshare(shm);
+	mutex_lock(&teeshm_mutex);
+	list_del(&shm->list_node);
+	mutex_unlock(&teeshm_mutex);
 
-		free_pages((unsigned long)shm->kaddr, get_order(shm->size));
-		mutex_lock(&teeshm_list_mutex);
-		list_del(&shm->list_node);
-		mutex_unlock(&teeshm_list_mutex);
-	} else {
-		kfree(shm->kaddr);
-		mutex_lock(&teedev->mutex);
-		list_del(&shm->list_node);
-		mutex_unlock(&teedev->mutex);
-	}
+	if (shm->flags & TEE_SHM_DMA_BUF)
+		poolm = &teedev->pool->dma_buf_mgr;
+	else
+		poolm = &teedev->pool->private_mgr;
 
+	poolm->ops->free(poolm, shm);
 	kfree(shm);
 }
 
 void tee_shm_free_by_teefilp(struct tee_filp *teefilp)
 {
+	struct tee_device *teedev = teefilp->teedev;
 	struct tee_shm *shm;
 	struct tee_shm *tmp;
 	LIST_HEAD(tmp_list);
@@ -224,36 +203,30 @@ void tee_shm_free_by_teefilp(struct tee_filp *teefilp)
 	/*
 	 * Move all matching shm:s to a temporary list
 	 */
-	mutex_lock(&teeshm_list_mutex);
-	list_for_each_entry_safe(shm, tmp, &teeshm_list, list_node) {
+	mutex_lock(&teeshm_mutex);
+	list_for_each_entry_safe(shm, tmp, &teedev->list_shm, list_node) {
 		if (shm->teefilp == teefilp) {
 			list_del(&shm->list_node);
 			list_add_tail(&shm->list_node, &tmp_list);
 		}
 	}
-	mutex_unlock(&teeshm_list_mutex);
+	mutex_unlock(&teeshm_mutex);
 
 	/*
 	 * For each shm in the temporary list move it to the pending free
 	 * list and call tee_shm_free(). Once the ref_count is 0 the shm
 	 * will be removed from this list.
-	 *
-	 * Since the 'struct tee_filp' is about to be freed (the reason
-	 * this function was called) set the teefilp to NULL. The only
-	 * purpose of the teefilp in 'struct tee_shm' is to be able to find
-	 * all shm:s related to a teefilp.
 	 */
 	while (true) {
-		mutex_lock(&teeshm_list_mutex);
+		mutex_lock(&teeshm_mutex);
 		shm = list_first_entry_or_null(&tmp_list,
 					       struct tee_shm, list_node);
 		if (shm) {
 			list_del(&shm->list_node);
 			list_add_tail(&shm->list_node,
 				      &teeshm_pending_free_list);
-			shm->teefilp = NULL;
 		}
-		mutex_unlock(&teeshm_list_mutex);
+		mutex_unlock(&teeshm_mutex);
 		if (!shm)
 			break;
 		tee_shm_free(shm);
@@ -263,6 +236,7 @@ void tee_shm_free_by_teefilp(struct tee_filp *teefilp)
 
 void tee_shm_free(struct tee_shm *shm)
 {
+
 	/*
 	 * dma_buf_put() decreases the dmabuf reference counter and will
 	 * call tee_shm_release() when the last reference is gone.
@@ -295,25 +269,15 @@ static struct tee_shm *tee_shm_find_by_key(struct tee_device *teedev, u32 flags,
 {
 	struct tee_shm *ret = NULL;
 	struct tee_shm *shm;
-	struct mutex *mutex;
-	struct list_head *list_shm;
 
-	if (flags & TEE_SHM_DMA_BUF) {
-		mutex = &teeshm_list_mutex;
-		list_shm = &teeshm_list;
-	} else {
-		mutex = &teedev->mutex;
-		list_shm = &teedev->list_shm;
-	}
-
-	mutex_lock(mutex);
-	list_for_each_entry(shm, list_shm, list_node) {
+	mutex_lock(&teeshm_mutex);
+	list_for_each_entry(shm, &teedev->list_shm, list_node) {
 		if (cmp(shm, key)) {
 			ret = shm;
 			break;
 		}
 	}
-	mutex_unlock(mutex);
+	mutex_unlock(&teeshm_mutex);
 
 	return ret;
 }

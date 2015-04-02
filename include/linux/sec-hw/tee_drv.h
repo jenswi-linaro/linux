@@ -32,7 +32,7 @@
 
 struct tee_device;
 struct tee_shm;
-
+struct tee_shm_pool;
 
 /**
  * struct tee_filp - driver specific file pointer data
@@ -90,13 +90,56 @@ struct tee_desc {
  * @returns a pointer to struct tee_device
  */
 struct tee_device *tee_register(const struct tee_desc *teedesc,
-			struct device *dev, void *driver_data);
+			struct device *dev, struct tee_shm_pool *pool,
+			void *driver_data);
 
 /**
  * tee_unregister() - Unregister a specific TEE driver
  * @teedev:	Driver to unregister
  */
 void tee_unregister(struct tee_device *teedev);
+
+/**
+ * tee_shm_pool_alloc_cma() - Create a shared memory pool based on device default CMA area
+ * @dev:	Device to get default CMA area from
+ * @vaddr:	Returned virtual address of start of CMA area
+ * @paddr:	Returned physical address of start of CMA area
+ * @size:	Returned size of CMA area
+ * @returns pointer to a 'struct tee_shm_pool' or an ERR_PTR on failure.
+ */
+#ifdef CONFIG_CMA
+struct tee_shm_pool *tee_shm_pool_alloc_cma(struct device *dev, u_long *vaddr,
+			phys_addr_t *paddr, size_t *size);
+#else
+struct tee_shm_pool *tee_shm_pool_alloc_cma(struct device *dev, u_long *vaddr,
+			phys_addr_t *paddr, size_t *size)
+{
+	return ERR_PTR(-ENOENT);
+}
+#endif
+
+/**
+ * tee_shm_pool_alloc_res_mem() - Create a shared memory pool a reserved memory range
+ * @vaddr:	Virtual address of start of pool
+ * @paddr:	Physical address of start of pool
+ * @size:	Size in bytes of the pool
+ *
+ * Start of pool will be rounded up to the nearest page, end of pool will
+ * be rounded down to the nearest page.
+ *
+ * @returns pointer to a 'struct tee_shm_pool' or an ERR_PTR on failure.
+ */
+struct tee_shm_pool *tee_shm_pool_alloc_res_mem(u_long vaddr,
+			phys_addr_t paddr, size_t size);
+
+/**
+ * tee_shm_pool_free() - Free a shared memory pool
+ * @pool:	The shared memory pool to free
+ *
+ * The must be no remaining shared memory allocated from this pool when
+ * this function is called.
+ */
+void tee_shm_pool_free(struct tee_shm_pool *pool);
 
 /**
  * tee_get_drvdata() - Return driver_data pointer
@@ -217,5 +260,12 @@ void tee_shm_put(struct tee_shm *shm);
  * @returns user space file descriptor to shared memory
  */
 int tee_shm_fd(struct tee_shm *shm);
+
+/**
+ * tee_shm_put_fd() - Decrease reference count and close file descriptor
+ * @fd:		File descriptor to close
+ * @returns < 0 on failure
+ */
+int tee_shm_put_fd(int fd);
 
 #endif /*__TEE_DRV_H*/

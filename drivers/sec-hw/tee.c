@@ -15,10 +15,7 @@
 #include <linux/fs.h>
 #include <linux/module.h>
 #include <linux/slab.h>
-#include <linux/fdtable.h>
-#include <linux/thread_info.h>
 #include <linux/uaccess.h>
-#include <linux/sched.h>
 #include <linux/sec-hw/tee_drv.h>
 #include "tee_private.h"
 
@@ -125,7 +122,7 @@ static long tee_ioctl_shm_alloc(struct tee_filp *teefilp,
 	return 0;
 err:
 	if (data.fd >= 0)
-		__close_fd(current->files, data.fd);
+		tee_shm_put_fd(data.fd);
 	tee_shm_free(shm);
 	return ret;
 }
@@ -174,14 +171,15 @@ static const struct file_operations tee_fops = {
 };
 
 struct tee_device *tee_register(const struct tee_desc *teedesc,
-			struct device *dev, void *driver_data)
+			struct device *dev, struct tee_shm_pool *pool,
+			void *driver_data)
 {
 	static atomic_t device_no = ATOMIC_INIT(-1);
 	static atomic_t priv_device_no = ATOMIC_INIT(-1);
 	struct tee_device *teedev;
 	int ret;
 
-	if (!teedesc || !teedesc->name || !dev)
+	if (!teedesc || !teedesc->name || !dev || !pool)
 		return NULL;
 
 	teedev = kzalloc(sizeof(*teedev), GFP_KERNEL);
@@ -190,6 +188,7 @@ struct tee_device *tee_register(const struct tee_desc *teedesc,
 
 	teedev->dev = dev;
 	teedev->desc = teedesc;
+	teedev->pool = pool;
 	teedev->driver_data = driver_data;
 
 	if (teedesc->flags & TEE_DESC_PRIVILEGED)
@@ -212,7 +211,7 @@ struct tee_device *tee_register(const struct tee_desc *teedesc,
 	}
 
 	INIT_LIST_HEAD(&teedev->list_shm);
-	mutex_init(&teedev->mutex);
+	teedev->teefilp_private.teedev = teedev;
 
 	dev_set_drvdata(teedev->miscdev.this_device, teedev);
 

@@ -117,6 +117,11 @@ struct tee_shm *tee_shm_alloc(struct tee_device *teedev,
 			ret = ERR_PTR(-EINVAL);
 			goto err;
 		}
+		/*
+		 * Assign the private teefilp to private shared memory
+		 * objects to be able to find the teedev pointer from
+		 * private shared memory object.
+		 */
 		shm->teectx = &teedev->teectx_private;
 		poolm = &teedev->pool->private_mgr;
 	}
@@ -126,6 +131,10 @@ struct tee_shm *tee_shm_alloc(struct tee_device *teedev,
 		ret = ERR_PTR(rc);
 		goto err;
 	}
+
+	mutex_lock(&teeshm_mutex);
+	list_add_tail(&shm->list_node, &teedev->list_shm);
+	mutex_unlock(&teeshm_mutex);
 
 	if (flags & TEE_SHM_DMA_BUF) {
 		shm->dmabuf = dma_buf_export(shm, &tee_shm_dma_buf_ops,
@@ -137,25 +146,23 @@ struct tee_shm *tee_shm_alloc(struct tee_device *teedev,
 		get_dma_buf(shm->dmabuf);
 
 		/*
-		 * Only call share on global shm:s, as the driver private
+		 * Only call share on dma_buf shm:s, as the driver private
 		 * shm:s always originates from the driver itself.
 		 */
 		rc = teedev->desc->ops->shm_share(shm);
 		if (rc) {
-			ret = ERR_PTR(rc);
-			goto err;
+			dma_buf_put(shm->dmabuf);
+			return ERR_PTR(rc);
 		}
+		shm->flags |= __TEE_SHM_SHARED;
 	}
-
-	mutex_lock(&teeshm_mutex);
-	list_add_tail(&shm->list_node, &teedev->list_shm);
-	mutex_unlock(&teeshm_mutex);
 
 	return shm;
 err:
 	if (poolm && shm->kaddr)
 		poolm->ops->free(poolm, shm);
 	kfree(shm);
+	module_put(teedev->desc->owner);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(tee_shm_alloc);
@@ -194,6 +201,8 @@ static void tee_shm_release(struct tee_shm *shm)
 	else
 		poolm = &teedev->pool->private_mgr;
 
+	if (shm->flags & __TEE_SHM_SHARED)
+		teedev->desc->ops->shm_unshare(shm);
 	poolm->ops->free(poolm, shm);
 	kfree(shm);
 

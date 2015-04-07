@@ -340,9 +340,7 @@ int tee_shm_va2pa(struct tee_shm *shm, void *va, phys_addr_t *pa)
 	if ((char *)va >= ((char *)shm->kaddr + shm->size))
 		return -EINVAL;
 
-	if (pa)
-		*pa = virt_to_phys(va);
-	return 0;
+	return tee_shm_get_pa(shm, (u_long)va - (u_long)shm->kaddr, pa);
 }
 EXPORT_SYMBOL_GPL(tee_shm_va2pa);
 
@@ -354,8 +352,13 @@ int tee_shm_pa2va(struct tee_shm *shm, phys_addr_t pa, void **va)
 	if (pa >= (shm->paddr + shm->size))
 		return -EINVAL;
 
-	if (va)
-		*va = phys_to_virt(pa);
+	if (va) {
+		void *v = tee_shm_get_va(shm, pa - shm->paddr);
+
+		if (IS_ERR(v))
+			return PTR_ERR(v);
+		*va = v;
+	}
 	return 0;
 }
 EXPORT_SYMBOL_GPL(tee_shm_pa2va);
@@ -364,7 +367,7 @@ void *tee_shm_get_va(struct tee_shm *shm, size_t offs)
 {
 	if (offs >= shm->size)
 		return ERR_PTR(-EINVAL);
-	return shm->kaddr;
+	return (char *)shm->kaddr + offs;
 }
 EXPORT_SYMBOL_GPL(tee_shm_get_va);
 

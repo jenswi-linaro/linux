@@ -1,1 +1,2 @@
-obj-y += optee.o
+obj-$(CONFIG_OPTEE) += optee.o
+optee-objs += core.o

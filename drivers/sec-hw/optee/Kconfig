@@ -14,9 +14,10 @@
 # with this program.  If not, see <http://www.gnu.org/licenses/>
 
 # OP-TEE Trusted Execution Environment Configuration
-config TEE_OPTEE
+config OPTEE
 	tristate "OP-TEE"
 	default n
 	depends on TEE_GENERIC
+	select DMA_CMA
 	help
 	  This implements the OP-TEE Trusted Execution Environment (TEE) driver.

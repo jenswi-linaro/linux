@@ -14,6 +14,8 @@
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
+#include <linux/dma-contiguous.h>
+#include <linux/cma.h>
 #include <linux/sec-hw/tee_drv.h>
 
 #define DRIVER_NAME "tee-optee"
@@ -23,48 +25,49 @@ struct optee {
 	struct tee_device *supp_teedev;
 	struct tee_device *teedev;
 	struct device *dev;
+	struct tee_shm_pool *pool;
 };
 
-struct optee_filp_state {
+struct optee_context_data {
 	int dummy;
 };
 
-static struct optee_filp_state *optee_new_filp_state(void)
+static struct optee_context_data *optee_new_ctx_data(void)
 {
-	struct optee_filp_state *filpstate;
+	struct optee_context_data *ctxdata;
 
-	filpstate = kzalloc(sizeof(struct optee_filp_state), GFP_KERNEL);
-	return filpstate;
+	ctxdata = kzalloc(sizeof(struct optee_context_data), GFP_KERNEL);
+	return ctxdata;
 }
 
-static void optee_destroy_filp_state(struct optee_filp_state *filpstate)
+static void optee_destroy_ctx_data(struct optee_context_data *ctxdata)
 {
-	if (filpstate)
-		kzfree(filpstate);
+	if (ctxdata)
+		kzfree(ctxdata);
 }
 
-static void optee_get_version(struct tee_filp *teefilp,
+static void optee_get_version(struct tee_context *ctx,
 		u32 *version, u8 *uuid)
 {
 	*version = OPTEE_VERSION;
 	memset(uuid, 0, TEE_UUID_SIZE);
 }
 
-static int optee_open(struct tee_filp *teefilp)
+static int optee_open(struct tee_context *ctx)
 {
-	teefilp->filp_data = optee_new_filp_state();
-	if (!teefilp->filp_data)
+	ctx->data = optee_new_ctx_data();
+	if (!ctx->data)
 		return -ENOMEM;
 	return 0;
 }
 
-static void optee_release(struct tee_filp *teefilp)
+static void optee_release(struct tee_context *ctx)
 {
-	optee_destroy_filp_state(teefilp->filp_data);
-	teefilp->filp_data = NULL;
+	optee_destroy_ctx_data(ctx->data);
+	ctx->data = NULL;
 }
 
-static int optee_cmd(struct tee_filp *teefilp, void __user *buf, size_t len)
+static int optee_cmd(struct tee_context *ctx, void __user *buf, size_t len)
 {
 	return -EINVAL;
 }
@@ -94,7 +97,7 @@ static struct tee_desc optee_desc = {
 	.owner = THIS_MODULE,
 };
 
-static int optee_supp_cmd(struct tee_filp *teefilp, void __user *buf,
+static int optee_supp_cmd(struct tee_context *teectx, void __user *buf,
 			size_t len)
 {
 	return -EINVAL;
@@ -118,8 +121,22 @@ static struct tee_desc optee_supp_desc = {
 
 static int optee_probe(struct platform_device *pdev)
 {
+	struct tee_shm_pool *pool;
 	struct optee *optee;
+	u_long vaddr;
+	phys_addr_t paddr;
+	size_t size;
 	int ret;
+
+	pool = tee_shm_pool_alloc_cma(&pdev->dev, &vaddr, &paddr, &size);
+	if (IS_ERR(pool)) {
+		dev_err(&pdev->dev,
+			"can't allocate memory for shared memory pool\n");
+		return PTR_ERR(pool);
+	}
+
+	dev_info(&pdev->dev, "pool: va 0x%lx pa 0x%lx size %zx\n",
+		vaddr, (u_long)paddr, size);
 
 	optee = devm_kzalloc(&pdev->dev, sizeof(*optee), GFP_KERNEL);
 	if (!optee)
@@ -127,14 +144,15 @@ static int optee_probe(struct platform_device *pdev)
 
 	optee->dev = &pdev->dev;
 
-	optee->teedev = tee_register(&optee_desc, &pdev->dev, optee);
+	optee->teedev = tee_register(&optee_desc, &pdev->dev, pool, optee);
 	if (!optee->teedev) {
 		dev_err(&pdev->dev, "could not register client driver\n");
 		ret = -EINVAL;
 		goto err;
 	}
 
-	optee->supp_teedev = tee_register(&optee_supp_desc, &pdev->dev, optee);
+	optee->supp_teedev = tee_register(&optee_supp_desc, &pdev->dev, pool,
+					  optee);
 	if (!optee->teedev) {
 		dev_err(&pdev->dev,
 			"could not register supplicant driver\n");
@@ -142,14 +160,19 @@ static int optee_probe(struct platform_device *pdev)
 		goto err;
 	}
 
+	optee->pool = pool;
 	platform_set_drvdata(pdev, optee);
 
 	dev_info(&pdev->dev, "initialized driver\n");
 	return 0;
 err:
-	if (optee->teedev)
-		tee_unregister(optee->teedev);
-	devm_kfree(&pdev->dev, optee);
+	if (optee) {
+		if (optee->teedev)
+			tee_unregister(optee->teedev);
+		devm_kfree(&pdev->dev, optee);
+	}
+	if (pool)
+		tee_shm_pool_free(pool);
 	return ret;
 }
 
@@ -159,6 +182,7 @@ static int optee_remove(struct platform_device *pdev)
 
 	tee_unregister(optee->teedev);
 	tee_unregister(optee->supp_teedev);
+	tee_shm_pool_free(optee->pool);
 
 	return 0;
 }
@@ -180,14 +204,11 @@ static struct platform_driver optee_driver = {
 
 static int __init optee_init(void)
 {
-	pr_info("%s", __func__);
-
 	return platform_driver_register(&optee_driver);
 }
 
 static void __exit optee_exit(void)
 {
-	pr_info("%s", __func__);
 	platform_driver_unregister(&optee_driver);
 }
 

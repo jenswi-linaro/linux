@@ -35,13 +35,13 @@ struct tee_shm;
 struct tee_shm_pool;
 
 /**
- * struct tee_filp - driver specific file pointer data
+ * struct tee_context - driver specific context on file pointer data
  * @teedev:	pointer to this drivers struct tee_device
- * @filp_data:	driver specific file pointer data, managed by the driver
+ * @data:	driver specific context data, managed by the driver
  */
-struct tee_filp {
+struct tee_context {
 	struct tee_device *teedev;
-	void *filp_data;
+	void *data;
 };
 
 /**
@@ -54,10 +54,10 @@ struct tee_filp {
  * @shm_unshare:	unshare some memory with Secure OS
  */
 struct tee_driver_ops {
-	void (*get_version)(struct tee_filp *teefilp, u32 *version, u8 *uuid);
-	int (*open)(struct tee_filp *teefilp);
-	void (*release)(struct tee_filp *teefilp);
-	int (*cmd)(struct tee_filp *teefilp, void __user *buf, size_t len);
+	void (*get_version)(struct tee_context *ctx, u32 *version, u8 *uuid);
+	int (*open)(struct tee_context *ctx);
+	void (*release)(struct tee_context *ctx);
+	int (*cmd)(struct tee_context *ctx, void __user *buf, size_t len);
 	int (*shm_share)(struct tee_shm *shm);
 	void (*shm_unshare)(struct tee_shm *shm);
 };
@@ -150,7 +150,7 @@ void *tee_get_drvdata(struct tee_device *teedev);
 /**
  * tee_shm_alloc() - Allocate shared memory
  * @teedev:	Driver that allocates the shared memory
- * @teefilp:	TEE file pointer when allocating global shared memory, must be
+ * @ctx:	TEE file pointer when allocating global shared memory, must be
  *		NULL for driver private shared memory.
  * @size:	Requested size of shared memory
  * @flags:	Flags setting properties for the requested shared memory.
@@ -164,7 +164,7 @@ void *tee_get_drvdata(struct tee_device *teedev);
  * @returns a pointer to 'struct tee_shm'
  */
 struct tee_shm *tee_shm_alloc(struct tee_device *teedev,
-			struct tee_filp *teefilp, size_t size, u32 flags);
+			struct tee_context *ctx, size_t size, u32 flags);
 
 /**
  * tee_shm_free() - Free shared memory

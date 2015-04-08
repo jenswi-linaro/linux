@@ -75,7 +75,7 @@ static struct dma_buf_ops tee_shm_dma_buf_ops = {
 };
 
 struct tee_shm *tee_shm_alloc(struct tee_device *teedev,
-			struct tee_filp *teefilp, size_t size, u32 flags)
+			struct tee_context *ctx, size_t size, u32 flags)
 {
 	struct tee_shm_pool_mgr *poolm = NULL;
 	struct tee_shm *shm;
@@ -99,20 +99,20 @@ struct tee_shm *tee_shm_alloc(struct tee_device *teedev,
 	shm->flags = flags;
 
 	if (flags & TEE_SHM_DMA_BUF) {
-		/* dma_buf shm:s must have a teefilp attached */
-		if (!teefilp) {
+		/* dma_buf shm:s must have a context attached */
+		if (!ctx) {
 			ret = ERR_PTR(-EINVAL);
 			goto err;
 		}
-		shm->teefilp = teefilp;
+		shm->teectx = ctx;
 		poolm = &teedev->pool->dma_buf_mgr;
 	} else {
-		/* Driver private shm:s must not have a teefilp attached */
-		if (teefilp) {
+		/* Driver private shm:s must not have a context attached */
+		if (ctx) {
 			ret = ERR_PTR(-EINVAL);
 			goto err;
 		}
-		shm->teefilp = &teedev->teefilp_private;
+		shm->teectx = &teedev->teectx_private;
 		poolm = &teedev->pool->private_mgr;
 	}
 
@@ -177,7 +177,7 @@ EXPORT_SYMBOL_GPL(tee_shm_put_fd);
 
 static void tee_shm_release(struct tee_shm *shm)
 {
-	struct tee_device *teedev = shm->teefilp->teedev;
+	struct tee_device *teedev = shm->teectx->teedev;
 	struct tee_shm_pool_mgr *poolm;
 
 	mutex_lock(&teeshm_mutex);
@@ -193,9 +193,9 @@ static void tee_shm_release(struct tee_shm *shm)
 	kfree(shm);
 }
 
-void tee_shm_free_by_teefilp(struct tee_filp *teefilp)
+void tee_shm_free_by_tee_context(struct tee_context *ctx)
 {
-	struct tee_device *teedev = teefilp->teedev;
+	struct tee_device *teedev = ctx->teedev;
 	struct tee_shm *shm;
 	struct tee_shm *tmp;
 	LIST_HEAD(tmp_list);
@@ -205,7 +205,7 @@ void tee_shm_free_by_teefilp(struct tee_filp *teefilp)
 	 */
 	mutex_lock(&teeshm_mutex);
 	list_for_each_entry_safe(shm, tmp, &teedev->list_shm, list_node) {
-		if (shm->teefilp == teefilp) {
+		if (shm->teectx == ctx) {
 			list_del(&shm->list_node);
 			list_add_tail(&shm->list_node, &tmp_list);
 		}

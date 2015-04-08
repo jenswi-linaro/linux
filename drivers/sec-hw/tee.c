@@ -23,46 +23,46 @@ static int tee_open(struct inode *inode, struct file *filp)
 {
 	int ret;
 	struct tee_device *teedev;
-	struct tee_filp *teefilp;
+	struct tee_context *ctx;
 
 	teedev = container_of(filp->private_data, struct tee_device, miscdev);
-	teefilp = kzalloc(sizeof(*teefilp), GFP_KERNEL);
-	if (!teefilp)
+	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
+	if (!ctx)
 		return -ENOMEM;
 
-	teefilp->teedev = teedev;
-	filp->private_data = teefilp;
-	ret = teedev->desc->ops->open(teefilp);
+	ctx->teedev = teedev;
+	filp->private_data = ctx;
+	ret = teedev->desc->ops->open(ctx);
 	if (ret)
-		kfree(teefilp);
+		kfree(ctx);
 	return ret;
 }
 
 static int tee_release(struct inode *inode, struct file *filp)
 {
-	struct tee_filp *teefilp = filp->private_data;
+	struct tee_context *ctx = filp->private_data;
 
-	/* Free all shm:s related to this teefilp */
-	tee_shm_free_by_teefilp(teefilp);
+	/* Free all shm:s related to this ctx */
+	tee_shm_free_by_tee_context(ctx);
 
-	teefilp->teedev->desc->ops->release(teefilp);
+	ctx->teedev->desc->ops->release(ctx);
 	return 0;
 }
 
-static long tee_ioctl_version(struct tee_filp *teefilp,
+static long tee_ioctl_version(struct tee_context *ctx,
 		struct tee_ioctl_version __user *uvers)
 {
 	struct tee_ioctl_version vers;
 
 	memset(&vers, 0, sizeof(vers));
 	vers.gen_version = TEE_SUBSYS_VERSION;
-	teefilp->teedev->desc->ops->get_version(teefilp, &vers.spec_version,
-						vers.uuid);
+	ctx->teedev->desc->ops->get_version(ctx, &vers.spec_version,
+					    vers.uuid);
 
 	return copy_to_user(uvers, &vers, sizeof(vers));
 }
 
-static long tee_ioctl_cmd(struct tee_filp *teefilp,
+static long tee_ioctl_cmd(struct tee_context *ctx,
 		struct tee_ioctl_cmd_data __user *ucmd)
 {
 	long ret;
@@ -74,10 +74,10 @@ static long tee_ioctl_cmd(struct tee_filp *teefilp,
 		return ret;
 
 	buf_ptr = (void __user *)(uintptr_t)cmd.buf_ptr;
-	return teefilp->teedev->desc->ops->cmd(teefilp, buf_ptr, cmd.buf_len);
+	return ctx->teedev->desc->ops->cmd(ctx, buf_ptr, cmd.buf_len);
 }
 
-static long tee_ioctl_shm_alloc(struct tee_filp *teefilp,
+static long tee_ioctl_shm_alloc(struct tee_context *ctx,
 		struct tee_ioctl_shm_alloc_data __user *udata)
 {
 	long ret;
@@ -93,12 +93,12 @@ static long tee_ioctl_shm_alloc(struct tee_filp *teefilp,
 
 	data.fd = -1;
 
-	shm = tee_shm_alloc(teefilp->teedev, teefilp, data.size,
+	shm = tee_shm_alloc(ctx->teedev, ctx, data.size,
 			    TEE_SHM_MAPPED | TEE_SHM_DMA_BUF);
 	if (IS_ERR(shm))
 		return PTR_ERR(shm);
 
-	ret = teefilp->teedev->desc->ops->shm_share(shm);
+	ret = ctx->teedev->desc->ops->shm_share(shm);
 	if (ret)
 		goto err;
 
@@ -127,14 +127,14 @@ err:
 	return ret;
 }
 
-static long tee_ioctl_mem_share(struct tee_filp *teefilp,
+static long tee_ioctl_mem_share(struct tee_context *ctx,
 		struct tee_ioctl_mem_share_data __user *udata)
 {
 	/* Not supported yet */
 	return -ENOENT;
 }
 
-static long tee_ioctl_mem_unshare(struct tee_filp *teefilp,
+static long tee_ioctl_mem_unshare(struct tee_context *ctx,
 		struct tee_ioctl_mem_share_data __user *udata)
 {
 	/* Not supported yet */
@@ -143,20 +143,20 @@ static long tee_ioctl_mem_unshare(struct tee_filp *teefilp,
 
 static long tee_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
-	struct tee_filp *teefilp = filp->private_data;
+	struct tee_context *ctx = filp->private_data;
 	void __user *uarg = (void __user *)arg;
 
 	switch (cmd) {
 	case TEE_IOC_VERSION:
-		return tee_ioctl_version(teefilp, uarg);
+		return tee_ioctl_version(ctx, uarg);
 	case TEE_IOC_CMD:
-		return tee_ioctl_cmd(teefilp, uarg);
+		return tee_ioctl_cmd(ctx, uarg);
 	case TEE_IOC_SHM_ALLOC:
-		return tee_ioctl_shm_alloc(teefilp, uarg);
+		return tee_ioctl_shm_alloc(ctx, uarg);
 	case TEE_IOC_MEM_SHARE:
-		return tee_ioctl_mem_share(teefilp, uarg);
+		return tee_ioctl_mem_share(ctx, uarg);
 	case TEE_IOC_MEM_UNSHARE:
-		return tee_ioctl_mem_unshare(teefilp, uarg);
+		return tee_ioctl_mem_unshare(ctx, uarg);
 	default:
 		return -EINVAL;
 	}
@@ -211,7 +211,7 @@ struct tee_device *tee_register(const struct tee_desc *teedesc,
 	}
 
 	INIT_LIST_HEAD(&teedev->list_shm);
-	teedev->teefilp_private.teedev = teedev;
+	teedev->teectx_private.teedev = teedev;
 
 	dev_set_drvdata(teedev->miscdev.this_device, teedev);
 

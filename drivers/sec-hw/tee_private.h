@@ -17,7 +17,7 @@ struct tee_device;
 
 struct tee_shm {
 	struct list_head list_node;
-	struct tee_filp *teefilp;
+	struct tee_context *teectx;
 	phys_addr_t paddr;
 	void *kaddr;
 	size_t size;
@@ -54,11 +54,11 @@ struct tee_device {
 	void *driver_data;
 
 	struct list_head list_shm;
-	struct tee_filp teefilp_private;
+	struct tee_context teectx_private;
 	struct tee_shm_pool *pool;
 };
 
-void tee_shm_free_by_teefilp(struct tee_filp *teefilp);
+void tee_shm_free_by_tee_context(struct tee_context *ctx);
 
 int tee_shm_init(void);
 

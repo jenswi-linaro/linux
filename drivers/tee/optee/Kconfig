@@ -2,6 +2,16 @@
 config OPTEE
 	tristate "OP-TEE"
 	default n
-	select DMA_CMA
 	help
 	  This implements the OP-TEE Trusted Execution Environment (TEE) driver.
+
+if OPTEE
+menu "OP-TEE options"
+config OPTEE_USE_CMA
+	bool "Use CMA"
+	default n
+	select DMA_CMA
+	help
+	  Configures OP-TEE driver to use CMA for shared memory allocations.
+endmenu
+endif

@@ -1,0 +1,7 @@
+# OP-TEE Trusted Execution Environment Configuration
+config OPTEE
+	tristate "OP-TEE"
+	default n
+	select DMA_CMA
+	help
+	  This implements the OP-TEE Trusted Execution Environment (TEE) driver.

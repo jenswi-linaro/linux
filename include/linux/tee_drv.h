@@ -153,7 +153,7 @@ void tee_device_unregister(struct tee_device *teedev);
  * @returns pointer to a 'struct tee_shm_pool' or an ERR_PTR on failure.
  */
 struct tee_shm_pool *tee_shm_pool_alloc_res_mem(struct device *dev,
-			u_long vaddr, phys_addr_t paddr, size_t size);
+			unsigned long vaddr, phys_addr_t paddr, size_t size);
 
 /**
  * tee_shm_pool_free() - Free a shared memory pool

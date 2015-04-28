@@ -37,8 +37,6 @@ static void tee_shm_release(struct tee_shm *shm)
 	else
 		poolm = &teedev->pool->private_mgr;
 
-	if (shm->flags & __TEE_SHM_SHARED)
-		teedev->desc->ops->shm_unshare(shm);
 	poolm->ops->free(poolm, shm);
 	kfree(shm);
 
@@ -149,17 +147,6 @@ struct tee_shm *tee_shm_alloc(struct tee_device *teedev, size_t size,
 			ret = ERR_CAST(shm->dmabuf);
 			goto err;
 		}
-
-		/*
-		 * Only call share on dma_buf shm:s, as the driver private
-		 * shm:s always originates from the driver itself.
-		 */
-		rc = teedev->desc->ops->shm_share(shm);
-		if (rc) {
-			dma_buf_put(shm->dmabuf);
-			return ERR_PTR(rc);
-		}
-		shm->flags |= __TEE_SHM_SHARED;
 	}
 
 	return shm;

@@ -114,10 +114,6 @@ static long tee_ioctl_shm_alloc(struct tee_context *ctx,
 	if (IS_ERR(shm))
 		return PTR_ERR(shm);
 
-	ret = ctx->teedev->desc->ops->shm_share(shm);
-	if (ret)
-		goto err;
-
 	data.flags = shm->flags;
 	data.size = shm->size;
 	data.fd = tee_shm_get_fd(shm);
@@ -186,7 +182,9 @@ struct tee_device *tee_device_alloc(const struct tee_desc *teedesc,
 	int rc;
 	int offs = 0;
 
-	if (!teedesc || !teedesc->name || !dev || !pool) {
+	if (!teedesc || !teedesc->name || !teedesc->ops ||
+	    !teedesc->ops->get_version || !teedesc->ops->open ||
+	    !teedesc->ops->release || !teedesc->ops->cmd || !dev || !pool) {
 		ret = ERR_PTR(-EINVAL);
 		goto err;
 	}
@@ -241,12 +239,12 @@ struct tee_device *tee_device_alloc(const struct tee_desc *teedesc,
 err:
 	dev_err(dev, "could not register %s driver\n",
 		teedesc->flags & TEE_DESC_PRIVILEGED ? "privileged" : "client");
-	if (teedev) {
+	if (teedev && teedev->id < TEE_NUM_DEVICES) {
 		spin_lock(&driver_lock);
 		clear_bit(teedev->id, dev_mask);
 		spin_unlock(&driver_lock);
-		kfree(teedev);
 	}
+	kfree(teedev);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(tee_device_alloc);
@@ -256,14 +254,22 @@ int tee_device_register(struct tee_device *teedev)
 {
 	int rc;
 
+	/*
+	 * If the teedev already is registered, don't do it again. It's
+	 * obviously an error to try to register twice, but if we return
+	 * an error we'll force the driver to remove the teedev.
+	 */
+	if (teedev->flags & TEE_DEVICE_FLAG_REGISTERED) {
+		dev_err(&teedev->dev, "attempt to register twice\n");
+		return 0;
+	}
+
 	rc = cdev_add(&teedev->cdev, teedev->dev.devt, 1);
 	if (rc) {
 		dev_err(&teedev->dev,
 			"unable to cdev_add() %s, major %d, minor %d, err=%d\n",
 			teedev->name, MAJOR(teedev->dev.devt),
 			MINOR(teedev->dev.devt), rc);
-
-		device_unregister(&teedev->dev);
 		return rc;
 	}
 
@@ -274,22 +280,22 @@ int tee_device_register(struct tee_device *teedev)
 			teedev->name, MAJOR(teedev->dev.devt),
 			MINOR(teedev->dev.devt), rc);
 		cdev_del(&teedev->cdev);
-		device_unregister(&teedev->dev);
 		return rc;
 	}
+	teedev->flags |= TEE_DEVICE_FLAG_REGISTERED;
 	return 0;
 }
 EXPORT_SYMBOL_GPL(tee_device_register);
 
 void tee_device_unregister(struct tee_device *teedev)
 {
-	if (!teedev)
+	if (IS_ERR_OR_NULL(teedev))
 		return;
 
-	get_device(&teedev->dev);
-
-	cdev_del(&teedev->cdev);
-	device_unregister(&teedev->dev);
+	if (teedev->flags & TEE_DEVICE_FLAG_REGISTERED) {
+		cdev_del(&teedev->cdev);
+		device_del(&teedev->dev);
+	}
 
 	/*
 	 * We'll block in down_write() until all file descriptors to the

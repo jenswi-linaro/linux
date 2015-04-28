@@ -27,9 +27,6 @@
 
 #define TEE_SHM_MAPPED		0x1	/* Memory mapped by the kernel */
 #define TEE_SHM_DMA_BUF		0x2	/* Memory with dma-buf handle */
-#define __TEE_SHM_SHARED	0x4	/* Has been shared with secure world */
-
-#define TEE_UUID_SIZE		16
 
 struct tee_device;
 struct tee_shm;
@@ -51,8 +48,6 @@ struct tee_context {
  * @open:		called when the device file is opened
  * @release:		release this open file
  * @cmd:		process a command from user space
- * @shm_share:		share some memory with Secure OS
- * @shm_unshare:	unshare some memory with Secure OS
  */
 struct tee_driver_ops {
 	int (*get_version)(struct tee_context *ctx,
@@ -60,8 +55,6 @@ struct tee_driver_ops {
 	int (*open)(struct tee_context *ctx);
 	void (*release)(struct tee_context *ctx);
 	int (*cmd)(struct tee_context *ctx, void __user *buf, size_t len);
-	int (*shm_share)(struct tee_shm *shm);
-	void (*shm_unshare)(struct tee_shm *shm);
 };
 
 /**
@@ -87,8 +80,8 @@ struct tee_desc {
  * @pool:	Shared memory pool, NULL if not used
  * @driver_data: Private driver data for this device
  *
- * Allocates a new struct tee_device instance. Freeing is done when
- * the device is removed through devres.
+ * Allocates a new struct tee_device instance. The device is
+ * removed by tee_device_unregister().
  *
  * @returns a pointer to a 'struct tee_device' or an ERR_PTR on failure
  */
@@ -100,6 +93,9 @@ struct tee_device *tee_device_alloc(const struct tee_desc *teedesc,
  * tee_device_register() - Registers a TEE device
  * @teedev:	Device to register
  *
+ * tee_device_unregister() need to be called to remove the @teedev if
+ * this function fails.
+ *
  * @returns < 0 on failure
  */
 int tee_device_register(struct tee_device *teedev);
@@ -107,23 +103,27 @@ int tee_device_register(struct tee_device *teedev);
 /**
  * tee_device_unregister() - Removes a TEE device
  * @teedev:	Device to unregister
+ *
+ * This function should be called to remove the @teedev even if
+ * tee_device_register() hasn't been called yet. Does nothing if
+ * IS_ERR_OR_NULL(@teedev) is true.
  */
 void tee_device_unregister(struct tee_device *teedev);
 
 /**
- * tee_shm_pool_alloc() - Create a shared memory pool based on device default CMA area
- * @dev:	Device to get default CMA area from
- * @vaddr:	Returned virtual address of start of CMA area
- * @paddr:	Returned physical address of start of CMA area
- * @size:	Returned size of CMA area
+ * tee_shm_pool_alloc() - Create a shared memory pool
+ * @dev:	Device allocating the pool
+ * @vaddr:	Returned virtual address of start of pool
+ * @paddr:	Returned physical address of start of pool
+ * @size:	Returned size in bytes of the pool
  * @returns pointer to a 'struct tee_shm_pool' or an ERR_PTR on failure.
  */
 #ifdef CONFIG_CMA
 struct tee_shm_pool *tee_shm_pool_alloc(struct device *dev, u_long *vaddr,
 			phys_addr_t *paddr, size_t *size);
 #else
-struct tee_shm_pool *tee_shm_pool_alloc(struct device *dev, u_long *vaddr,
-			phys_addr_t *paddr, size_t *size)
+static inline struct tee_shm_pool *tee_shm_pool_alloc(struct device *dev,
+			u_long *vaddr, phys_addr_t *paddr, size_t *size)
 {
 	return ERR_PTR(-ENOENT);
 }

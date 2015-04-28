@@ -19,8 +19,10 @@
 #include <linux/types.h>
 
 /*
- * This file describes the API provided by the generic TEE driver to user
- * space
+ * This file describes the API provided by a TEE driver to user space.
+ *
+ * Each TEE driver defines a TEE specific protocol which is used for the
+ * data passed back and forth using TEE_IOC_CMD.
  */
 
 
@@ -33,20 +35,21 @@
 #define TEE_IOCTL_SHM_DMA_BUF	0x2	/* dma-buf handle on shared memory */
 
 /**
- * struct tee_version - TEE versions
- * @data:		[out] Specific TEE driver protocol identification
+ * struct tee_version - TEE version
+ * @data:	[out] Specific TEE driver protocol identification
  *
- * Identifies the specific TEE driver, @data can be a uuid or something else
- * which the client can identify the protocol to use in TEE_IOC_CMD
+ * Identifies the specific TEE driver, @data can be a uuid or something
+ * else which the client can identify the protocol to use in TEE_IOC_CMD.
  * Used as argument for TEE_IOC_VERSION below.
  */
 struct tee_ioctl_version_data {
 	__u8 data[16];
 };
 /**
- * TEE_IOC_VERSION - query version of drivers
+ * TEE_IOC_VERSION - query version of TEE
  *
- * Takes a tee_version struct and returns with the version numbers filled in.
+ * Takes a tee_version struct and returns with the TEE version data filled
+ * in.
  */
 #define TEE_IOC_VERSION		_IOR(TEE_IOC_MAGIC, TEE_IOC_BASE + 0, \
 				     struct tee_ioctl_version_data)
@@ -56,8 +59,9 @@ struct tee_ioctl_version_data {
  * @buf_ptr:	[in] A __user pointer to a command buffer
  * @buf_len:	[in] Length of the buffer above
  *
- * Opaque command data which is passed on to the specific driver. The command
- * buffer doesn't have to reside in shared memory.
+ * Opaque command data which is passed on to the specific driver. The
+ * command buffer doesn't have to reside in shared memory. The TEE and TEE
+ * driver defines the protocol used in this channel.
  * Used as argument for TEE_IOC_CMD below.
  */
 struct tee_ioctl_cmd_data {
@@ -68,6 +72,7 @@ struct tee_ioctl_cmd_data {
  * TEE_IOC_CMD - pass a command to the specific TEE driver
  *
  * Takes tee_cmd_data struct which is passed to the specific TEE driver.
+ * The TEE driver fills in a response in the same buffer before returning.
  */
 #define TEE_IOC_CMD		_IOR(TEE_IOC_MAGIC, TEE_IOC_BASE + 1, \
 				     struct tee_ioctl_cmd_data)
@@ -99,13 +104,14 @@ struct tee_ioctl_shm_alloc_data {
 				     struct tee_ioctl_shm_alloc_data)
 
 /*
- * Five syscalls are used when communicating with the generic TEE driver.
+ * Five syscalls are used when communicating with the TEE driver.
  * open(): opens the device associated with the driver
  * ioctl(): as described above operating on the file descriptor from open()
  * close(): two cases
  *   - closes the device file descriptor
  *   - closes a file descriptor connected to allocated shared memory
- * mmap(): maps shared memory into user space
+ * mmap(): maps shared memory into user space using information from struct
+ *	   tee_ioctl_shm_alloc_data
  * munmap(): unmaps previously shared memory
  */
 

@@ -51,11 +51,14 @@ struct tee_shm_pool {
 	void *private_data;
 };
 
+#define TEE_DEVICE_FLAG_REGISTERED	0x1
 #define TEE_MAX_DEV_NAME_LEN 32
+
 struct tee_device {
 	char name[TEE_MAX_DEV_NAME_LEN];
 	const struct tee_desc *desc;
 	int id;
+	unsigned flags;
 
 	struct device dev;
 	struct cdev cdev;

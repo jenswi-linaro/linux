@@ -200,11 +200,14 @@ struct opteem_meta_open_session {
 /**
  * struct optee_cmd_prefix - initial header for all user space buffers
  * @func_id:	Function Id OPTEEM_FUNCID_* below
- * @pad:	padding to make the struct size a multiple of 16 bytes
+ * @pad:	padding to make the struct size a multiple of 8 bytes
+ *
+ * This struct is 8 byte aligned since it's always followed by a struct
+ * opteem_arg which requires 8 byte alignment.
  */
 struct opteem_cmd_prefix {
 	__u32 func_id;
-	__u32 pad;
+	__u32 pad __aligned(8);
 };
 
 /*****************************************************************************

@@ -86,13 +86,26 @@
 			   OPTEE_SMC_OWNER_TRUSTED_OS_API, \
 			   OPTEE_SMC_FUNCID_CALLS_COUNT)
 
+
+/*
+ * Cache settings for shared memory
+ */
+#define OPTEE_SMC_SHM_NONCACHED		0ULL
+#define OPTEE_SMC_SHM_CACHED		1ULL
+
+/*
+ * a0..a7 is used as register names in the descriptions below, on arm32
+ * that translates to r0..r7 and on arm64 to w0..w7. In both cases it's
+ * 32-bit registers.
+ */
+
 /*
  * Function specified by SMC Calling convention
  *
  * Return one of the following UIDs if using API specified in this file
  * without further extentions:
  * 65cb6b93-af0c-4617-8ed6-644a8d1140f8
- * see OPTEE_SMC_UID_* in optee_msg.h
+ * see also OPTEE_SMC_UID_* in optee_msg.h
  */
 #define OPTEE_SMC_FUNCID_CALLS_UID OPTEEM_FUNCID_CALLS_UID
 #define OPTEE_SMC_CALLS_UID \
@@ -104,7 +117,7 @@
  * Function specified by SMC Calling convention
  *
  * Returns 2.0 if using API specified in this file without further extentions.
- * see OPTEEM_REVISION_* in optee_msg.h
+ * see also OPTEEM_REVISION_* in optee_msg.h
  */
 #define OPTEE_SMC_FUNCID_CALLS_REVISION OPTEEM_FUNCID_CALLS_REVISION
 #define OPTEE_SMC_CALLS_REVISION \
@@ -118,7 +131,7 @@
  * Used by non-secure world to figure out which Trusted OS is installed.
  * Note that returned UUID is the UUID of the Trusted OS, not of the API.
  *
- * Returns UUID in r0-4/w0-4 in the same way as OPTEE_SMC_CALLS_UID
+ * Returns UUID in a0-4 in the same way as OPTEE_SMC_CALLS_UID
  * described above.
  */
 #define OPTEE_SMC_FUNCID_GET_OS_UUID OPTEEM_FUNCID_GET_OS_UUID
@@ -132,7 +145,7 @@
  * is installed. Note that the returned revision is the revision of the
  * Trusted OS, not of the API.
  *
- * Returns revision in r0-1/w0-1 in the same way as OPTEE_SMC_CALLS_REVISION
+ * Returns revision in a0-1 in the same way as OPTEE_SMC_CALLS_REVISION
  * described above.
  */
 #define OPTEE_SMC_FUNCID_GET_OS_REVISION OPTEEM_FUNCID_GET_OS_REVISION
@@ -143,26 +156,26 @@
  * Call with struct opteem_arg as argument
  *
  * Call register usage:
- * r0/w0	SMC Function ID, OPTEE_SMC*CALL_WITH_ARG
- * r1/w1	Upper 32bit of a 64bit physical pointer to a struct opteem_arg
- * r2/w2	Lower 32bit of a 64bit physical pointer to a struct opteem_arg
- * r3-6/w3-6	Not used
- * r7/w7	Hypervisor Client ID register
+ * a0	SMC Function ID, OPTEE_SMC*CALL_WITH_ARG
+ * a1	Upper 32bit of a 64bit physical pointer to a struct opteem_arg
+ * a2	Lower 32bit of a 64bit physical pointer to a struct opteem_arg
+ * a3-6	Not used
+ * a7	Hypervisor Client ID register
  *
  * Normal return register usage:
- * r0/w0	Return value, OPTEE_SMC_RETURN_*
- * r1-3/w1-3	Not used
- * r4-7/w4-7	Preserved
+ * a0	Return value, OPTEE_SMC_RETURN_*
+ * a1-3	Not used
+ * a4-7	Preserved
  *
  * Ebusy return register usage:
- * r0/w0	Return value, OPTEE_SMC_RETURN_EBUSY
- * r1-3/w1-3	Preserved
- * r4-7/w4-7	Preserved
+ * a0	Return value, OPTEE_SMC_RETURN_EBUSY
+ * a1-3	Preserved
+ * a4-7	Preserved
  *
  * RPC return register usage:
- * r0/w0	Return value, OPTEE_SMC_RETURN_IS_RPC(val)
- * r1-2/w1-2	RPC parameters
- * r3-7/w3-7	Resume information, must be preserved
+ * a0	Return value, OPTEE_SMC_RETURN_IS_RPC(val)
+ * a1-2	RPC parameters
+ * a3-7	Resume information, must be preserved
  *
  * Possible return values:
  * OPTEE_SMC_RETURN_UNKNOWN_FUNCTION	Trusted OS does not recognize this
@@ -188,26 +201,24 @@
  * Register a secure/non-secure shared memory region
  *
  * Call register usage:
- * r0/w0	SMC Function ID, OPTEE_SMC*_REGISTER_SHM
- * r1/w1	Upper 32bits of 64bit physical address of start of SHM
- * r2/w2	Lower 32bits of 64bit physical address of start of SHM
- * r3/w3	Size of SHM
- * r4/w4	Cache settings of memory, as defined by the
- *		OPTEE_SMC_SHM_* values below
- * r5-6/w5-6	Not used
- * r7/w7	Hypervisor Client ID register
+ * a0	SMC Function ID, OPTEE_SMC*_REGISTER_SHM
+ * a1	Upper 32bits of 64bit physical address of start of SHM
+ * a2	Lower 32bits of 64bit physical address of start of SHM
+ * a3	Size of SHM
+ * a4	Cache settings of memory, as defined by the
+ *	OPTEE_SMC_SHM_* values above
+ * a5-6	Not used
+ * a7	Hypervisor Client ID register
  *
  * Normal return register usage:
- * r0/w0	OPTEE_SMC_RETURN_OK if OK
- *		OPTEE_SMC_RETURN_EBUSY can't obtain access to register SHM
- *		OPTEE_SMC_RETURN_ENOMEM not enough memory to register SHM
- *		OPTEE_SMC_RETURN_EBADADDR bad parameters
- *		OPTEE_SMC_RETURN_EBADCMD call not available
- * r1-2/w1-2	Not used
- * r3-7/w3-7	Preserved
+ * a0	OPTEE_SMC_RETURN_OK if OK
+ *	OPTEE_SMC_RETURN_EBUSY can't obtain access to register SHM
+ *	OPTEE_SMC_RETURN_ENOMEM not enough memory to register SHM
+ *	OPTEE_SMC_RETURN_EBADADDR bad parameters
+ *	OPTEE_SMC_RETURN_EBADCMD call not available
+ * a1-2	Not used
+ * a3-7	Preserved
  */
-#define OPTEE_SMC_SHM_NONCACHED		0ULL
-#define OPTEE_SMC_SHM_CACHED		1ULL
 #define OPTEE_SMC_FUNCID_REGISTER_SHM	5
 #define OPTEE_SMC_REGISTER_SHM \
 	OPTEE_SMC_FAST_CALL_VAL(OPTEE_SMC_FUNCID_REGISTER_SHM)
@@ -216,20 +227,20 @@
  * Unregister a secure/non-secure shared memory region
  *
  * Call register usage:
- * r0/w0	SMC Function ID, OPTEE_SMC*_*UNREGISTER_SHM
- * r1/w1	Upper 32bits of 64bit physical address of start of SHM
- * r2/w2	Lower 32bits of 64bit physical address of start of SHM
- * r3/w3	Size of SHM
- * r3-6/w2-6	Not used
- * r7/w7	Hypervisor Client ID register
+ * a0	SMC Function ID, OPTEE_SMC*_*UNREGISTER_SHM
+ * a1	Upper 32bits of 64bit physical address of start of SHM
+ * a2	Lower 32bits of 64bit physical address of start of SHM
+ * a3	Size of SHM
+ * a3-6	Not used
+ * a7	Hypervisor Client ID register
  *
  * Normal return register usage:
- * r0/w0	OPTEE_SMC_RETURN_OK if OK
- *		OPTEE_SMC_RETURN_EBUSY can't obtain access to register SHM
- *		OPTEE_SMC_RETURN_ENOMEM not enough memory to register SHM
- *		OPTEE_SMC_RETURN_EBADCMD call not available
- * r1-3/w1-3	Not used
- * r4-7/w4-7	Preserved
+ * a00	OPTEE_SMC_RETURN_OK if OK
+ *	OPTEE_SMC_RETURN_EBUSY can't obtain access to register SHM
+ *	OPTEE_SMC_RETURN_ENOMEM not enough memory to register SHM
+ *	OPTEE_SMC_RETURN_EBADCMD call not available
+ * a1-3	Not used
+ * a4-7	Preserved
  */
 #define OPTEE_SMC_FUNCID_UNREGISTER_SHM	6
 #define OPTEE_SMC_UNREGISTER_SHM \
@@ -241,21 +252,22 @@
  * Returns the Secure/Non-secure shared memory config.
  *
  * Call register usage:
- * r0	SMC Function ID, OPTEE_SMC_GET_SHM_CONFIG
- * r1-6	Not used
- * r7	Hypervisor Client ID register
+ * a0	SMC Function ID, OPTEE_SMC_GET_SHM_CONFIG
+ * a1-6	Not used
+ * a7	Hypervisor Client ID register
  *
  * Have config return register usage:
- * r0	OPTEE_SMC_RETURN_OK
- * r1	Physical address of start of SHM
- * r2	Size of of SHM
- * r3	1 if SHM is cached, 0 if uncached.
- * r4-7	Preserved
+ * a0	OPTEE_SMC_RETURN_OK
+ * a1	Physical address of start of SHM
+ * a2	Size of of SHM
+ * a3	Cache settings of memory, as defined by the
+ *	OPTEE_SMC_SHM_* values above
+ * a4-7	Preserved
  *
  * Not available register usage:
- * r0	OPTEE_SMC_RETURN_NOTAVAIL
- * r1-3 Not used
- * r4-7	Preserved
+ * a0	OPTEE_SMC_RETURN_NOTAVAIL
+ * a1-3 Not used
+ * a4-7	Preserved
  */
 #define OPTEE_SMC_FUNCID_GET_SHM_CONFIG	7
 #define OPTEE_SMC_GET_SHM_CONFIG \
@@ -268,26 +280,26 @@
  * of L2CC mutex.
  *
  * Call register usage:
- * r0	SMC Function ID, OPTEE_SMC_L2CC_MUTEX
- * r1	OPTEE_SMC_L2CC_MUTEX_GET_ADDR Get physical address of mutex
- *	OPTEE_SMC_L2CC_MUTEX_SET_ADDR Set physical address of mutex
- *	OPTEE_SMC_L2CC_MUTEX_ENABLE	 Enable usage of mutex
- *	OPTEE_SMC_L2CC_MUTEX_DISABLE	 Disable usage of mutex
- * r2	if r1 == OPTEE_SMC_L2CC_MUTEX_SET_ADDR, physical address of mutex
- * r3-6	Not used
- * r7	Hypervisor Client ID register
+ * a0	SMC Function ID, OPTEE_SMC_L2CC_MUTEX
+ * a1	OPTEE_SMC_L2CC_MUTEX_GET_ADDR	Get physical address of mutex
+ *	OPTEE_SMC_L2CC_MUTEX_SET_ADDR	Set physical address of mutex
+ *	OPTEE_SMC_L2CC_MUTEX_ENABLE	Enable usage of mutex
+ *	OPTEE_SMC_L2CC_MUTEX_DISABLE	Disable usage of mutex
+ * a2	if a1 == OPTEE_SMC_L2CC_MUTEX_SET_ADDR, physical address of mutex
+ * a3-6	Not used
+ * a7	Hypervisor Client ID register
  *
  * Have config return register usage:
- * r0	OPTEE_SMC_RETURN_OK
- * r1	Preserved
- * r2	if r1 == OPTEE_SMC_L2CC_MUTEX_GET_ADDR, physical address of L2CC mutex
- * r3-7	Preserved
+ * a0	OPTEE_SMC_RETURN_OK
+ * a1	Preserved
+ * a2	if a1 == OPTEE_SMC_L2CC_MUTEX_GET_ADDR, physical address of L2CC mutex
+ * a3-7	Preserved
  *
  * Error return register usage:
- * r0	OPTEE_SMC_RETURN_NOTAVAIL	Physical address not available
- *	OPTEE_SMC_RETURN_EBADADDR		Bad supplied physical address
- *	OPTEE_SMC_RETURN_EBADCMD		Unsupported value in r1
- * r1-7	Preserved
+ * a0	OPTEE_SMC_RETURN_NOTAVAIL	Physical address not available
+ *	OPTEE_SMC_RETURN_EBADADDR	Bad supplied physical address
+ *	OPTEE_SMC_RETURN_EBADCMD	Unsupported value in a1
+ * a1-7	Preserved
  */
 #define OPTEE_SMC_L2CC_MUTEX_GET_ADDR	0
 #define OPTEE_SMC_L2CC_MUTEX_SET_ADDR	1
@@ -301,9 +313,9 @@
  * Resume from RPC (for example after processing an IRQ)
  *
  * Call register usage:
- * r0/w0	SMC Function ID, OPTEE_SMC_CALL_RETURN_FROM_RPC
- * r1-3/w1-3	Value of r1-3/w1-3 when OPTEE_SMC_CALL_WITH_ARG returned
- *		OPTEE_SMC_RETURN_RPC in r0/w0
+ * a0	SMC Function ID, OPTEE_SMC_CALL_RETURN_FROM_RPC
+ * a1-3	Value of a1-3 when OPTEE_SMC_CALL_WITH_ARG returned
+ *	OPTEE_SMC_RETURN_RPC in a0
  *
  * Return register usage is the same as for OPTEE_SMC_*CALL_WITH_ARG above.
  *
@@ -337,27 +349,27 @@
  * Argument memory is used to hold a struct opteem_arg.
  *
  * "Call" register usage:
- * r0/w0	This value, OPTEE_SMC_RETURN_RPC_ALLOC_ARG
- * r1/w1	Size in bytes of required argument memory
- * r2/w2	Not used
- * r3/w3	Resume information, must be preserved
- * r4-r5/w4	Not used
- * r6-7/w5-7	Resume information, must be preserved
+ * a0	This value, OPTEE_SMC_RETURN_RPC_ALLOC_ARG
+ * a1	Size in bytes of required argument memory
+ * a2	Not used
+ * a3	Resume information, must be preserved
+ * a4-5	Not used
+ * a6-7	Resume information, must be preserved
  *
  * "Return" register usage:
- * r0/w0	SMC Function ID, OPTEE_SMC_CALL_RETURN_FROM_RPC.
- * r1/w1	Upper 32bits of 64bit physical pointer to allocated argument
- *		memory, (r1 == 0 && r2 == 0) if size was 0 or if memory can't
- *		be allocated.
- * r2/w2	Lower 32bits of 64bit physical pointer to allocated argument
- *		memory, (r1 == 0 && r2 == 0) if size was 0 or if memory can't
- *		be allocated
- * r3/w3	Preserved
- * r4/w4	Upper 32bits of 64bit Shared memory cookie used when freeing
- *		the memory or doing an RPC
- * r5/w5	Lower 32bits of 64bit Shared memory cookie used when freeing
- *		the memory or doing an RPC
- * r6-7/w5-7	Preserved
+ * a0	SMC Function ID, OPTEE_SMC_CALL_RETURN_FROM_RPC.
+ * a1	Upper 32bits of 64bit physical pointer to allocated argument
+ *	memory, (a1 == 0 && a2 == 0) if size was 0 or if memory can't
+ *	be allocated.
+ * a2	Lower 32bits of 64bit physical pointer to allocated argument
+ *	memory, (a1 == 0 && a2 == 0) if size was 0 or if memory can't
+ *	be allocated
+ * a3	Preserved
+ * a4	Upper 32bits of 64bit Shared memory cookie used when freeing
+ *	the memory or doing an RPC
+ * a5	Lower 32bits of 64bit Shared memory cookie used when freeing
+ *	the memory or doing an RPC
+ * a6-7	Preserved
  */
 #define OPTEE_SMC_RPC_FUNC_ALLOC_ARG	0
 #define OPTEE_SMC_RETURN_RPC_ALLOC_ARG \
@@ -369,27 +381,27 @@
  * opteem_param_memref.
  *
  * "Call" register usage:
- * r0/w0	This value, OPTEE_SMC_RETURN_RPC_ALLOC_PAYLOAD
- * r1/w1	Size in bytes of required argument memory
- * r2/w2	Not used
- * r3/w3	Resume information, must be preserved
- * r4-5/w4-5	Not used
- * r6-7/w5-7	Resume information, must be preserved
+ * a0	This value, OPTEE_SMC_RETURN_RPC_ALLOC_PAYLOAD
+ * a1	Size in bytes of required argument memory
+ * a2	Not used
+ * a3	Resume information, must be preserved
+ * a4-5	Not used
+ * a6-7	Resume information, must be preserved
  *
  * "Return" register usage:
- * r0/w0	SMC Function ID, OPTEE_SMC_CALL_RETURN_FROM_RPC.
- * r1/w1	Upper 32bits of 64bit physical pointer to allocated argument
- *		memory, (r1 == 0 && r2 == 0) if size was 0 or if memory can't
- *		be allocated
- * r2/w2	Lower 32bits of 64bit physical pointer to allocated argument
- *		memory, (r1 == 0 && r2 == 0) if size was 0 or if memory can't
- *		be allocated
- * r3/w3	Preserved
- * r4/w4	Upper 32bits of 64bit Shared memory cookie used when freeing
- *		the memory
- * r5/w5	Lower 32bits of 64bit Shared memory cookie used when freeing
- *		the memory
- * r6-7/w5-7	Preserved
+ * a0	SMC Function ID, OPTEE_SMC_CALL_RETURN_FROM_RPC.
+ * a1	Upper 32bits of 64bit physical pointer to allocated argument
+ *	memory, (a1 == 0 && a2 == 0) if size was 0 or if memory can't
+ *	be allocated
+ * a2	Lower 32bits of 64bit physical pointer to allocated argument
+ *	memory, (a1 == 0 && a2 == 0) if size was 0 or if memory can't
+ *	be allocated
+ * a3	Preserved
+ * a4	Upper 32bits of 64bit Shared memory cookie used when freeing
+ *	the memory
+ * a5	Lower 32bits of 64bit Shared memory cookie used when freeing
+ *	the memory
+ * a6-7	Preserved
  */
 #define OPTEE_SMC_RPC_FUNC_ALLOC_PAYLOAD	1
 #define OPTEE_SMC_RETURN_RPC_ALLOC_PAYLOAD \
@@ -399,17 +411,17 @@
  * Free memory previously allocated by OPTEE_SMC_RETURN_RPC_ALLOC_ARG.
  *
  * "Call" register usage:
- * r0/w0	This value, OPTEE_SMC_RETURN_RPC_FREE_ARG
- * r1/w1	Upper 32bits of 64bit shared memory cookie belonging to this
- *		argument memory
- * r2/w2	Lower 32bits of 64bit shared memory cookie belonging to this
- *		argument memory
- * r3-7/w3-7	Resume information, must be preserved
+ * a0	This value, OPTEE_SMC_RETURN_RPC_FREE_ARG
+ * a1	Upper 32bits of 64bit shared memory cookie belonging to this
+ *	argument memory
+ * a2	Lower 32bits of 64bit shared memory cookie belonging to this
+ *	argument memory
+ * a3-7	Resume information, must be preserved
  *
  * "Return" register usage:
- * r0/w0	SMC Function ID, OPTEE_SMC_CALL_RETURN_FROM_RPC.
- * r1-2/w1-2	Not used
- * r3-7/w3-7	Preserved
+ * a0	SMC Function ID, OPTEE_SMC_CALL_RETURN_FROM_RPC.
+ * a1-2	Not used
+ * a3-7	Preserved
  */
 #define OPTEE_SMC_RPC_FUNC_FREE_ARG	2
 #define OPTEE_SMC_RETURN_RPC_FREE_ARG \
@@ -419,17 +431,17 @@
  * Free memory previously allocated by OPTEE_SMC_RETURN_RPC_ALLOC_PAYLOAD.
  *
  * "Call" register usage:
- * r0/w0	This value, OPTEE_SMC_RETURN_RPC_FREE_PAYLOAD
- * r1/w1	Upper 32bit of 64bit shared memory cookie belonging to this
- *		payload memory
- * r2/w2	Lower 32bit of 64bit shared memory cookie belonging to this
- *		payload memory
- * r3-7/w3-7	Resume information, must be preserved
+ * a0	This value, OPTEE_SMC_RETURN_RPC_FREE_PAYLOAD
+ * a1	Upper 32bit of 64bit shared memory cookie belonging to this
+ *	payload memory
+ * a2	Lower 32bit of 64bit shared memory cookie belonging to this
+ *	payload memory
+ * a3-7	Resume information, must be preserved
  *
  * "Return" register usage:
- * r0/w0	SMC Function ID, OPTEE_SMC_CALL_RETURN_FROM_RPC.
- * r1-2/w1-2	Not used
- * r3-7/w2-7	Preserved
+ * a0	SMC Function ID, OPTEE_SMC_CALL_RETURN_FROM_RPC.
+ * a1-2	Not used
+ * a3-7	Preserved
  */
 #define OPTEE_SMC_RPC_FUNC_FREE_PAYLOAD	3
 #define OPTEE_SMC_RETURN_RPC_FREE_PAYLOAD \
@@ -439,12 +451,12 @@
  * Deliver an IRQ in normal world.
  *
  * "Call" register usage:
- * r0/w0	OPTEE_SMC_RETURN_RPC_IRQ
- * r1-7/w1-7	Resume information, must be preserved
+ * a0	OPTEE_SMC_RETURN_RPC_IRQ
+ * a1-7	Resume information, must be preserved
  *
  * "Return" register usage:
- * r0/w0	SMC Function ID, OPTEE_SMC_CALL_RETURN_FROM_RPC.
- * r1-7/w1-7	Preserved
+ * a0	SMC Function ID, OPTEE_SMC_CALL_RETURN_FROM_RPC.
+ * a1-7	Preserved
  */
 #define OPTEE_SMC_RPC_FUNC_IRQ		4
 #define OPTEE_SMC_RETURN_RPC_IRQ \
@@ -461,28 +473,28 @@
  * - param_attrs	attributes of the parameters
  *
  * "Call" register usage:
- * r0/w0	OPTEE_SMC_RETURN_RPC_CMD
- * r1/w1	Upper 32bit of a 64bit Shared memory cookie holding a
- *		struct opteem_arg, must be preserved, only the data should
- *		be updated
- * r2/w2	Lower 32bit of a 64bit Shared memory cookie holding a
- *		struct opteem_arg, must be preserved, only the data should
- *		be updated
- * r3-7/w3-7	Resume information, must be preserved
+ * a0	OPTEE_SMC_RETURN_RPC_CMD
+ * a1	Upper 32bit of a 64bit Shared memory cookie holding a
+ *	struct opteem_arg, must be preserved, only the data should
+ *	be updated
+ * a2	Lower 32bit of a 64bit Shared memory cookie holding a
+ *	struct opteem_arg, must be preserved, only the data should
+ *	be updated
+ * a3-7	Resume information, must be preserved
  *
  * "Return" register usage:
- * r0/w0	SMC Function ID, OPTEE_SMC_CALL_RETURN_FROM_RPC.
- * r1-2/w1-2	Not used
- * r3-7/w3-7	Preserved
+ * a0	SMC Function ID, OPTEE_SMC_CALL_RETURN_FROM_RPC.
+ * a1-2	Not used
+ * a3-7	Preserved
  */
 #define OPTEE_SMC_RPC_FUNC_CMD		5
 #define OPTEE_SMC_RETURN_RPC_CMD \
 	OPTEE_SMC_RPC_VAL(OPTEE_SMC_RPC_FUNC_CMD)
 
-/* Returned in r0/w0 */
+/* Returned in a0 */
 #define OPTEE_SMC_RETURN_UNKNOWN_FUNCTION 0xFFFFFFFF
 
-/* Returned in r0/w0 only from Trusted OS functions */
+/* Returned in a0 only from Trusted OS functions */
 #define OPTEE_SMC_RETURN_OK		0x0
 #define OPTEE_SMC_RETURN_EBUSY		0x1
 #define OPTEE_SMC_RETURN_ERESUME	0x2

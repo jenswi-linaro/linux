@@ -66,7 +66,7 @@ static void optee_supp_send(struct optee *optee,
 	mutex_unlock(&supp->thrd_mutex);
 }
 
-void copy_back_outdata(struct opteem_arg *arg,
+static void copy_back_outdata(struct opteem_arg *arg,
 			const struct opteem_arg *resp)
 {
 	struct opteem_param *arg_params = OPTEEM_GET_PARAMS(arg);

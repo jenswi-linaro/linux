@@ -205,23 +205,11 @@ out_from_call:
 	return ret;
 }
 
-static int optee_shm_share(struct tee_shm *shm)
-{
-	/* No special action needed to share memory with OP-TEE */
-	return 0;
-}
-
-static void optee_shm_unshare(struct tee_shm *shm)
-{
-}
-
 static struct tee_driver_ops optee_ops = {
 	.get_version = optee_get_version,
 	.open = optee_open,
 	.release = optee_release,
 	.cmd = optee_cmd,
-	.shm_share = optee_shm_share,
-	.shm_unshare = optee_shm_unshare,
 };
 
 static struct tee_desc optee_desc = {
@@ -308,8 +296,6 @@ static struct tee_driver_ops optee_supp_ops = {
 	.open = optee_open,
 	.release = optee_release,
 	.cmd = optee_supp_cmd,
-	.shm_share = optee_shm_share,
-	.shm_unshare = optee_shm_unshare,
 };
 
 static struct tee_desc optee_supp_desc = {
@@ -361,8 +347,8 @@ static struct tee_shm_pool *optee_config_shm_ioremap(struct device *dev,
 		return ERR_PTR(-ENOENT);
 	}
 
-	if (!param.a3) {
-		dev_err(dev, "Uncached shared memory not supported\n");
+	if (param.a3 != OPTEE_SMC_SHM_CACHED) {
+		dev_err(dev, "only normal cached shared memory supported\n");
 		return ERR_PTR(-EINVAL);
 	}
 
@@ -480,6 +466,8 @@ err:
 	tee_device_unregister(optee->supp_teedev);
 	if (pool)
 		tee_shm_pool_free(pool);
+	if (ioremaped_shm)
+		iounmap(optee->ioremaped_shm);
 	return rc;
 }
 

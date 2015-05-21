@@ -221,6 +221,9 @@ config NEED_RET_TO_USER
 config ARCH_MTD_XIP
 	bool
 
+config HAVE_SMCCC
+	bool
+
 config VECTORS_BASE
 	hex
 	default 0xffff0000 if MMU || CPU_HIGH_VECTOR
@@ -324,6 +327,7 @@ config ARCH_MULTIPLATFORM
 	select CLKSRC_OF
 	select COMMON_CLK
 	select GENERIC_CLOCKEVENTS
+	select HAVE_SMCCC if CPU_V7
 	select MIGHT_HAVE_PCI
 	select MULTI_IRQ_HANDLER
 	select SPARSE_IRQ

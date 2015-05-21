@@ -83,6 +83,7 @@ config ARM64
 	select SPARSE_IRQ
 	select SYSCTL_EXCEPTION_TRACE
 	select HAVE_CONTEXT_TRACKING
+	select HAVE_SMCCC
 	help
 	  ARM 64-bit (AArch64) Linux support.
 
@@ -145,6 +146,9 @@ config KERNEL_MODE_NEON
 
 config FIX_EARLYCON_MEM
 	def_bool y
+
+config HAVE_SMCCC
+	bool
 
 config PGTABLE_LEVELS
 	int

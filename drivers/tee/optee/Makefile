@@ -1,3 +1,4 @@
+ccflags-y += -gdwarf-2 -O0
 obj-$(CONFIG_OPTEE) += optee.o
 optee-objs += core.o
 optee-objs += call.o

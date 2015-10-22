@@ -19,6 +19,7 @@
 #include <linux/pm.h>
 #include <linux/printk.h>
 #include <linux/psci.h>
+#include <linux/arm-smccc.h>
 #include <linux/reboot.h>
 
 #include <uapi/linux/psci.h>
@@ -56,8 +57,6 @@ struct psci_operations psci_ops;
 
 typedef unsigned long (psci_fn)(unsigned long, unsigned long,
 				unsigned long, unsigned long);
-asmlinkage psci_fn __invoke_psci_fn_hvc;
-asmlinkage psci_fn __invoke_psci_fn_smc;
 static psci_fn *invoke_psci_fn;
 
 enum psci_function {
@@ -69,6 +68,24 @@ enum psci_function {
 };
 
 static u32 psci_function_id[PSCI_FN_MAX];
+
+static unsigned long __invoke_psci_fn_hvc(unsigned long a0, unsigned long a1,
+			unsigned long a2, unsigned long a3)
+{
+	struct smccc_res res;
+
+	smccc_hvc(a0, a1, a2, a3, 0, 0, 0, 0, &res);
+	return res.a0;
+}
+
+static unsigned long __invoke_psci_fn_smc(unsigned long a0, unsigned long a1,
+			unsigned long a2, unsigned long a3)
+{
+	struct smccc_res res;
+
+	smccc_smc(a0, a1, a2, a3, 0, 0, 0, 0, &res);
+	return res.a0;
+}
 
 static int psci_to_linux_errno(int errno)
 {
